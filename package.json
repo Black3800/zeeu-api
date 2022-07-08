@@ -9,6 +9,10 @@
   "author": "anakint",
   "license": "ISC",
   "dependencies": {
+    "dotenv": "^16.0.1",
+    "firebase-admin": "^11.0.0",
+    "nanoid": "^4.0.0",
     "ws": "^8.8.0"
-  }
+  },
+  "type": "module"
 }
