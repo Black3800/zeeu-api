@@ -55,7 +55,7 @@ export default class ApiSocket {
     if (request.type === 'verify') {
       this.#verifyToken(request.params.token)
     }
-    
+
     if (this.#uid === null) return // Deter further action if not yet verified
 
     switch (request.type) {
@@ -64,6 +64,9 @@ export default class ApiSocket {
         break
       case 'unsubscribe':
         this.#unsubscribe(request.params.sid)
+        break
+      case 'get':
+        this.#handleGet(request.params)
         break
       default:
         break
@@ -82,6 +85,7 @@ export default class ApiSocket {
     const sid = this.#newSubscriptionId()
     switch (params.collection) {
       case 'appointments':
+        this.#subscribeAppointments(sid)
         break
       case 'chats':
         this.#subscribeChats(sid)
@@ -91,6 +95,36 @@ export default class ApiSocket {
       ref: params.ref,
       sid: sid,
     })
+  }
+
+  /***
+   * @example
+   * ```json
+   * {
+   *    "type": "subscribe",
+   *    "params": {
+   *        "collection": "appointments",
+   *        "ref": string
+   *    }
+   * }
+   * ```
+   */
+  #subscribeAppointments(subscriptionId) {
+    const unsubscribe = this.#db
+      .collection('appointments')
+      .where(this.#user.user_type, '==', this.#uid)
+      .onSnapshot((querySnapshot) => {
+        console.log('updated appointments')
+        const data = []
+        for (let doc of querySnapshot.docs) {
+          data.push({
+            id: doc.ref.id,
+            ...doc.data(),
+          })
+        }
+        this.#emit('appointments', data)
+      })
+    this.#subscriptions.set(subscriptionId, unsubscribe)
   }
 
   /***
@@ -110,7 +144,7 @@ export default class ApiSocket {
       .collection('chats')
       .where(this.#user.user_type, '==', this.#uid)
       .onSnapshot((querySnapshot) => {
-        console.log('updated')
+        console.log('updated chats')
         const data = []
         for (let doc of querySnapshot.docs) {
           data.push({
@@ -121,6 +155,46 @@ export default class ApiSocket {
         this.#emit('chats', data)
       })
     this.#subscriptions.set(subscriptionId, unsubscribe)
+  }
+
+  async #handleGet(params) {
+    let data
+    switch (params.collection) {
+      case 'appointments':
+        data = await this.#getAppointments()
+        break
+    }
+    this.#emit('get-success', {
+      ref: params.ref,
+      content: data,
+    })
+  }
+
+  /***
+   * @example
+   * ```json
+   * {
+   *    "type": "get",
+   *    "params": {
+   *        "collection": "appointments",
+   *        "ref": string
+   *    }
+   * }
+   * ```
+   */
+  async #getAppointments() {
+    const snapshot = await this.#db
+      .collection('appointments')
+      .where(this.#user.user_type, '==', this.#uid)
+      .get()
+    const result = []
+    snapshot.forEach((doc) => {
+      result.push({
+        id: doc.ref.id,
+        ...doc.data(),
+      })
+    })
+    return result
   }
 
   #emit(event, data) {
