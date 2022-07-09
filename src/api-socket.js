@@ -104,7 +104,7 @@ export default class ApiSocket {
    *    "type": "subscribe",
    *    "params": {
    *        "collection": "appointments",
-   *        "ref": string
+   *        "ref": string?
    *    }
    * }
    * ```
@@ -134,7 +134,7 @@ export default class ApiSocket {
    *    "type": "subscribe",
    *    "params": {
    *        "collection": "chats",
-   *        "ref": string
+   *        "ref": string?
    *    }
    * }
    * ```
@@ -163,6 +163,10 @@ export default class ApiSocket {
       case 'appointments':
         data = await this.#getAppointments()
         break
+
+      case 'doctors':
+        data = await this.#getDoctors(params.specialty)
+        break
     }
     this.#emit('get-success', {
       ref: params.ref,
@@ -177,7 +181,7 @@ export default class ApiSocket {
    *    "type": "get",
    *    "params": {
    *        "collection": "appointments",
-   *        "ref": string
+   *        "ref": string?
    *    }
    * }
    * ```
@@ -192,6 +196,37 @@ export default class ApiSocket {
       result.push({
         id: doc.ref.id,
         ...doc.data(),
+      })
+    })
+    return result
+  }
+
+  /***
+   * @example
+   * ```json
+   * {
+   *    "type": "get",
+   *    "params": {
+   *        "collection": "doctors",
+   *        "ref": string?,
+   *        "specialty": string?
+   *    }
+   * }
+   * ```
+   */
+  async #getDoctors(specialty) {
+    let query = await this.#db
+      .collection('users')
+      .where('user_type', '==', 'doctor')
+    if (specialty) {
+      query = query.where('specialty', '==', specialty)
+    }
+    const snapshot = await query.get()
+    const result = []
+    snapshot.forEach((doc) => {
+      result.push({
+        uid: doc.ref.id,
+        ...doc.data()
       })
     })
     return result
