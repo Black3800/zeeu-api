@@ -327,6 +327,7 @@ export default class ApiSocket {
   }
 
   #setActiveStatus(status) {
+    if (!this.#uid) return
     this.#db.collection('users').doc(this.#uid).set({
       active: status
     }, { merge: true })
