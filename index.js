@@ -1,11 +1,12 @@
 // Read env variables
-import 'dotenv/config'
+import dotenv from 'dotenv'
+dotenv.config()
 const SERVICE_ACCOUNT_KEY = Buffer.from(process.env.SERVICE_ACCOUNT_KEY, 'base64').toString('utf8')
 const SOCKET_PORT = parseInt(process.env.SOCKET_PORT)
 
 // Create server
 import { WebSocketServer } from 'ws'
-const wss = new WebSocketServer({ port: process.env.PORT || SOCKET_PORT })
+const wss = new WebSocketServer({ port: SOCKET_PORT })
 console.log('listening at ' + SOCKET_PORT)
 
 // Initialize necessary constants
