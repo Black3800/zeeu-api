@@ -92,8 +92,13 @@ export default class ApiSocket {
       case 'appointments':
         this.#subscribeAppointments(sid)
         break
+
       case 'chats':
         this.#subscribeChats(sid)
+        break
+
+      case 'messages':
+        this.#subscribeMessages(sid, params.id)
         break
 
       case 'user':
@@ -132,6 +137,39 @@ export default class ApiSocket {
           })
         }
         this.#emit('appointments', data)
+      })
+    this.#subscriptions.set(subscriptionId, unsubscribe)
+  }
+
+  /***
+   * @example
+   * ```json
+   * {
+   *    "type": "subscribe",
+   *    "params": {
+   *        "collection": "messages",
+   *        "ref": string?,
+   *        "id": string
+   *    }
+   * }
+   * ```
+   */
+  #subscribeMessages(subscriptionId, id) {
+    const unsubscribe = this.#db
+      .collection('chats')
+      .doc(id)
+      .collection('messages')
+      .orderBy('time')
+      .onSnapshot((querySnapshot) => {
+        console.log('updated messages')
+        const data = []
+        for (let doc of querySnapshot.docs) {
+          data.push(doc.data())
+        }
+        this.#emit('messages', {
+          id: id,
+          content: data
+        })
       })
     this.#subscriptions.set(subscriptionId, unsubscribe)
   }
