@@ -5,8 +5,8 @@ const SOCKET_PORT = parseInt(process.env.SOCKET_PORT)
 
 // Create server
 import { WebSocketServer } from 'ws'
-const wss = new WebSocketServer({ port: process.env.PORT || SOCKET_PORT })
-console.log('listening at ' + SOCKET_PORT)
+const wss = new WebSocketServer({ port: process.env.PORT })
+console.log('listening at ' + process.env.PORT)
 
 // Initialize necessary constants
 import { initializeApp, cert } from 'firebase-admin/app'
