@@ -167,6 +167,10 @@ export default class ApiSocket {
       case 'doctors':
         data = await this.#getDoctors(params.specialty)
         break
+
+      case 'user':
+        data = await this.#getUser(params.uid)
+        break
     }
     this.#emit('get-success', {
       ref: params.ref,
@@ -230,6 +234,27 @@ export default class ApiSocket {
       })
     })
     return result
+  }
+
+  /***
+   * @example
+   * ```json
+   * {
+   *    "type": "get",
+   *    "params": {
+   *        "collection": "user",
+   *        "ref": string?,
+   *        "uid": string
+   *    }
+   * }
+   * ```
+   */
+  async #getUser(uid) {
+    const snapshot = await this.#db
+      .collection('users')
+      .doc(uid)
+      .get()
+    return snapshot.data()
   }
 
   #emit(event, data) {
