@@ -41,6 +41,7 @@ export default class ApiSocket {
         this.#uid = decodedToken.uid
         const doc = await this.#db.collection('users').doc(this.#uid).get()
         this.#user = doc.data()
+        this.#setActiveStatus(true)
         this.#emit('verify-success')
       })
       .catch((error) => this.#emit('error', error))
@@ -62,13 +63,17 @@ export default class ApiSocket {
       case 'subscribe':
         this.#handleSubscribe(request.params)
         break
+
       case 'unsubscribe':
         this.#unsubscribe(request.params.sid)
         break
+
       case 'get':
         this.#handleGet(request.params)
         break
-      default:
+
+      case 'logout':
+        this.#logout()
         break
     }
   }
@@ -89,6 +94,10 @@ export default class ApiSocket {
         break
       case 'chats':
         this.#subscribeChats(sid)
+        break
+
+      case 'user':
+        this.#subscribeUser(sid, params.uid)
         break
     }
     this.#emit('subscribe-success', {
@@ -153,6 +162,33 @@ export default class ApiSocket {
           })
         }
         this.#emit('chats', data)
+      })
+    this.#subscriptions.set(subscriptionId, unsubscribe)
+  }
+
+  /***
+   * @example
+   * ```json
+   * {
+   *    "type": "subscribe",
+   *    "params": {
+   *        "collection": "user",
+   *        "ref": string?,
+   *        "uid": string
+   *    }
+   * }
+   * ```
+   */
+  #subscribeUser(subscriptionId, uid) {
+    const unsubscribe = this.#db
+      .collection('users')
+      .doc(uid)
+      .onSnapshot((querySnapshot) => {
+        console.log('updated user', uid)
+        this.#emit('user', {
+          uid: uid,
+          ...querySnapshot.data()
+        })
       })
     this.#subscriptions.set(subscriptionId, unsubscribe)
   }
@@ -284,11 +320,31 @@ export default class ApiSocket {
     }
   }
 
-  #close() {
-    console.log('bye')
+  #unsubscribeAll() {
     for (let [sid, unsubscribe] of this.#subscriptions) {
       unsubscribe()
     }
+  }
+
+  #setActiveStatus(status) {
+    this.#db.collection('users').doc(this.#uid).set({
+      active: status
+    }, { merge: true })
+  }
+
+  #close() {
+    console.log('bye')
+    this.#unsubscribeAll()
+    this.#setActiveStatus(false)
     if (this.#onClose) this.#onClose()
+  }
+
+  #logout() {
+    console.log('logging out', this.#uid)
+    this.#setActiveStatus(false)
+    this.#unsubscribeAll()
+    this.#uid = null
+    this.#user = null
+    this.#subscriptions = new Map()
   }
 }
