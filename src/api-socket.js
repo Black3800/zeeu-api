@@ -260,6 +260,9 @@ export default class ApiSocket {
       case 'user':
         data = await this.#getUser(params.uid)
         break
+
+      case 'chatId':
+        data = await this.#getChatIdWithDoctor(params.doctor)
     }
     this.#emit('get-success', {
       ref: params.ref,
@@ -341,6 +344,41 @@ export default class ApiSocket {
   async #getUser(uid) {
     const snapshot = await this.#db.collection('users').doc(uid).get()
     return snapshot.data()
+  }
+
+  /***
+   * @example
+   * ```json
+   * {
+   *    "type": "get",
+   *    "params": {
+   *        "collection": "chatId",
+   *        "ref": string?,
+   *        "doctor": string
+   *    }
+   * }
+   * ```
+   */
+  async #getChatIdWithDoctor(doctor) {
+    const snapshot = await this.#db
+      .collection('chats')
+      .where('doctor', '==', doctor)
+      .where('patient', '==', this.#uid)
+      .get()
+    if (snapshot.docs.length > 0) {
+      return snapshot.docs[0].id
+    }
+    const chat = await this.#db
+      .collection('chats')
+      .add({
+        doctor: doctor,
+        patient: this.#uid,
+        latest_message_text: '',
+        latest_message_time: Timestamp.now(),
+        latest_message_seen_doctor: false,
+        latest_message_seen_patient: false
+      })
+    return chat.id
   }
 
   async #handlePost(params) {
