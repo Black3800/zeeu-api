@@ -1,3 +1,4 @@
+import { Timestamp } from 'firebase-admin/firestore'
 import { nanoid } from 'nanoid'
 
 export default class ApiSocket {
@@ -34,19 +35,6 @@ export default class ApiSocket {
     this.#ws.on('close', () => this.#close())
   }
 
-  #verifyToken(token) {
-    this.#auth
-      .verifyIdToken(token)
-      .then(async (decodedToken) => {
-        this.#uid = decodedToken.uid
-        const doc = await this.#db.collection('users').doc(this.#uid).get()
-        this.#user = doc.data()
-        this.#setActiveStatus(true)
-        this.#emit('verify-success')
-      })
-      .catch((error) => this.#emit('error', error))
-  }
-
   #parseMessage(message) {
     return JSON.parse(Buffer.from(message).toString('utf8'))
   }
@@ -60,6 +48,10 @@ export default class ApiSocket {
     if (this.#uid === null) return // Deter further action if not yet verified
 
     switch (request.type) {
+      case 'fetch':
+        this.#fetchUser()
+        break
+
       case 'subscribe':
         this.#handleSubscribe(request.params)
         break
@@ -70,6 +62,10 @@ export default class ApiSocket {
 
       case 'get':
         this.#handleGet(request.params)
+        break
+
+      case 'post':
+        this.#handlePost(request.params)
         break
 
       case 'logout':
@@ -84,6 +80,25 @@ export default class ApiSocket {
       id = nanoid()
     } while (this.#subscriptions.has(id))
     return id
+  }
+
+  #verifyToken(token) {
+    this.#auth
+      .verifyIdToken(token)
+      .then(async (decodedToken) => {
+        this.#uid = decodedToken.uid
+        await this.#fetchUser()
+        this.#setActiveStatus(true)
+        this.#emit('verify-success')
+      })
+      .catch((error) => this.#emit('error', error))
+  }
+
+  async #fetchUser() {
+    console.log('fetching for', this.#uid)
+    const doc = await this.#db.collection('users').doc(this.#uid).get()
+    this.#user = doc.data()
+    this.#emit('fetch-success')
   }
 
   #handleSubscribe(params) {
@@ -168,7 +183,7 @@ export default class ApiSocket {
         }
         this.#emit('messages', {
           id: id,
-          content: data
+          content: data,
         })
       })
     this.#subscriptions.set(subscriptionId, unsubscribe)
@@ -225,7 +240,7 @@ export default class ApiSocket {
         console.log('updated user', uid)
         this.#emit('user', {
           uid: uid,
-          ...querySnapshot.data()
+          ...querySnapshot.data(),
         })
       })
     this.#subscriptions.set(subscriptionId, unsubscribe)
@@ -304,7 +319,7 @@ export default class ApiSocket {
     snapshot.forEach((doc) => {
       result.push({
         uid: doc.ref.id,
-        ...doc.data()
+        ...doc.data(),
       })
     })
     return result
@@ -324,11 +339,157 @@ export default class ApiSocket {
    * ```
    */
   async #getUser(uid) {
-    const snapshot = await this.#db
-      .collection('users')
-      .doc(uid)
-      .get()
+    const snapshot = await this.#db.collection('users').doc(uid).get()
     return snapshot.data()
+  }
+
+  async #handlePost(params) {
+    switch (params.collection) {
+      case 'user':
+        await this.#setUser(params.uid, params.user)
+        break
+
+      case 'message':
+        await this.#setMessage(params.chatId, params.type, params.content)
+        break
+
+      case 'seen':
+        await this.#seenLatestMessage(params.chatId)
+        break
+
+      case 'appointment':
+        await this.#setAppointment(params.chatId, params.start, params.end)
+        break
+    }
+    this.#emit('post-success', {
+      ref: params.ref,
+    })
+  }
+
+  /***
+   * @example
+   * ```json
+   * {
+   *    "type": "post",
+   *    "params": {
+   *        "collection": "user",
+   *        "ref": string,
+   *        "uid": string,
+   *        "user": Object
+   *    }
+   * }
+   * ```
+   */
+  async #setUser(uid, user) {
+    console.log('set %s to', uid, user)
+    await this.#db.collection('users').doc(uid).set(user)
+  }
+
+  /***
+   * @example
+   * ```json
+   * {
+   *    "type": "post",
+   *    "params": {
+   *        "collection": "latest-message",
+   *        "ref": string?,
+   *        "chatId": string,
+   *        "text": string
+   *    }
+   * }
+   * ```
+   */
+  async #setMessage(chatId, type, content) {
+    let latestMessageText;
+    const time = Timestamp.now()
+    switch (type) {
+      case 'text':
+        latestMessageText = content
+        await this.#setTextMessage(chatId, content, time)
+        break
+
+      case 'image':
+        latestMessageText = 'Photo'
+        await this.#setImageMessage(chatId, content, time)
+        break
+    }
+    await this.#db.collection('chats').doc(chatId).update({
+      latest_message_text: latestMessageText,
+      latest_message_time: time,
+      latest_message_seen_doctor: false,
+      latest_message_seen_patient: false
+    })
+  }
+
+  async #setTextMessage(chatId, text, time) {
+    await this.#db.collection('chats').doc(chatId).collection('messages').add({
+      type: 'text',
+      content: text,
+      time: time,
+      from_doctor: this.#user.user_type === 'doctor'
+    })
+  }
+
+  async #setImageMessage(chatId, path, time) {
+    await this.#db.collection('chats').doc(chatId).collection('messages').add({
+      type: 'image',
+      content: path,
+      time: time,
+      from_doctor: this.#user.user_type === 'doctor'
+    })
+  }
+
+  async #seenLatestMessage(chatId) {
+    if (this.#user.user_type == 'doctor') {
+      await this.#db
+        .collection('chats')
+        .doc(chatId)
+        .update({ latest_message_seen_doctor: true })
+    } else {
+      await this.#db
+        .collection('chats')
+        .doc(chatId)
+        .update({ latest_message_seen_patient: true })
+    }
+  }
+
+  /***
+   * @example
+   * ```json
+   * {
+   *    "type": "post",
+   *    "params": {
+   *        "collection": "appointment",
+   *        "ref": string?,
+   *        "chatId": string,
+   *        "start": ISO8601,
+   *        "end": ISO8601
+   *    }
+   * }
+   * ```
+   */
+  async #setAppointment(chatId, start, end) {
+    const snapshot = await this.#db.collection('chats').doc(chatId).get()
+    const chat = snapshot.data()
+    const appointment = await this.#db.collection('appointments').add({
+      'doctor': chat.doctor,
+      'patient': chat.patient,
+      'start': Timestamp.fromDate(new Date(start)),
+      'end': Timestamp.fromDate(new Date(end))
+    })
+    const msgTime = Timestamp.now()
+    await this.#db.collection('chats').doc(chatId).collection('messages').add({
+        from_doctor: true,
+        type: 'appointment',
+        content: appointment.id,
+        time: msgTime
+    })
+    await this.#db.collection('chats').doc(chatId).update({
+      latest_message_text: 'Appointment',
+      latest_message_time: msgTime,
+      latest_message_seen_doctor: false,
+      latest_message_seen_patient: false
+    })
   }
 
   #emit(event, data) {
@@ -366,9 +527,12 @@ export default class ApiSocket {
 
   #setActiveStatus(status) {
     if (!this.#uid) return
-    this.#db.collection('users').doc(this.#uid).set({
-      active: status
-    }, { merge: true })
+    this.#db.collection('users').doc(this.#uid).set(
+      {
+        active: status,
+      },
+      { merge: true }
+    )
   }
 
   #close() {
